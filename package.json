@@ -1,7 +1,7 @@
 {
-  "name": "chat-p2p-json-server",
+  "name": "chat-p2p-server",
   "version": "1.0.0",
-  "description": "Servidor solo para usuarios.json",
+  "description": "Servidor con amistades y mensajes offline",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
