@@ -38,7 +38,7 @@ function guardarUsuarios(data) {
 }
 
 // ============================================
-// ENDPOINTS
+// ENDPOINTS BÁSICOS
 // ============================================
 
 // GET: Obtener todos los usuarios
@@ -62,6 +62,8 @@ app.get('/usuarios/:id', (req, res) => {
 app.post('/usuarios', (req, res) => {
     const { id, nombre, password, peer_id } = req.body;
     
+    console.log('📝 POST /usuarios:', { id, nombre, password: password ? '****' : 'sin', peer_id });
+    
     if (!id || !nombre) {
         return res.status(400).json({ error: 'Faltan id o nombre' });
     }
@@ -74,6 +76,7 @@ app.post('/usuarios', (req, res) => {
         if (password) usuario.password = password;
         usuario.peer_id = peer_id || null;
         usuario.ultimo_activo = new Date().toISOString();
+        console.log(`✏️ Usuario actualizado: ${nombre}`);
     } else {
         usuario = {
             id: id,
@@ -81,11 +84,12 @@ app.post('/usuarios', (req, res) => {
             password: password || '',
             peer_id: peer_id || null,
             ultimo_activo: new Date().toISOString(),
-            amigos: [],           // ← Lista de IDs de amigos
-            solicitudes: [],      // ← Solicitudes de amistad recibidas
-            mensajes_pendientes: [] // ← Mensajes offline
+            amigos: [],
+            solicitudes: [],
+            mensajes_pendientes: []
         };
         data.usuarios.push(usuario);
+        console.log(`✅ Usuario creado: ${nombre}`);
     }
     
     if (guardarUsuarios(data)) {
@@ -95,13 +99,37 @@ app.post('/usuarios', (req, res) => {
     }
 });
 
+// PUT: Actualizar peer_id
+app.put('/usuarios/:id', (req, res) => {
+    const { peer_id } = req.body;
+    console.log(`✏️ PUT /usuarios/${req.params.id}: peer_id = ${peer_id}`);
+    
+    const data = leerUsuarios();
+    const usuario = data.usuarios.find(u => u.id === req.params.id);
+    
+    if (!usuario) {
+        return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+    
+    usuario.peer_id = peer_id || null;
+    usuario.ultimo_activo = new Date().toISOString();
+    
+    if (guardarUsuarios(data)) {
+        res.json({ success: true, usuario });
+    } else {
+        res.status(500).json({ error: 'Error al actualizar' });
+    }
+});
+
 // ============================================
-// AMISTADES
+// ENDPOINTS DE AMISTAD
 // ============================================
 
 // Enviar solicitud de amistad
 app.post('/amistad/solicitar', (req, res) => {
     const { emisorId, receptorId } = req.body;
+    
+    console.log(`🤝 Solicitud de amistad: ${emisorId} -> ${receptorId}`);
     
     if (!emisorId || !receptorId) {
         return res.status(400).json({ error: 'Faltan IDs' });
@@ -130,6 +158,7 @@ app.post('/amistad/solicitar', (req, res) => {
     receptor.solicitudes.push(emisorId);
     
     if (guardarUsuarios(data)) {
+        console.log(`✅ Solicitud enviada de ${emisor.nombre} a ${receptor.nombre}`);
         res.json({ 
             success: true, 
             message: `Solicitud enviada a ${receptor.nombre}`,
@@ -144,6 +173,8 @@ app.post('/amistad/solicitar', (req, res) => {
 app.post('/amistad/aceptar', (req, res) => {
     const { usuarioId, solicitanteId } = req.body;
     
+    console.log(`✅ Aceptar solicitud: ${solicitanteId} -> ${usuarioId}`);
+    
     if (!usuarioId || !solicitanteId) {
         return res.status(400).json({ error: 'Faltan IDs' });
     }
@@ -157,7 +188,9 @@ app.post('/amistad/aceptar', (req, res) => {
     }
     
     // Eliminar solicitud
-    usuario.solicitudes = usuario.solicitudes.filter(id => id !== solicitanteId);
+    if (usuario.solicitudes) {
+        usuario.solicitudes = usuario.solicitudes.filter(id => id !== solicitanteId);
+    }
     
     // Agregar como amigos mutuamente
     if (!usuario.amigos) usuario.amigos = [];
@@ -171,6 +204,7 @@ app.post('/amistad/aceptar', (req, res) => {
     }
     
     if (guardarUsuarios(data)) {
+        console.log(`✅ Ahora son amigos: ${solicitante.nombre} y ${usuario.nombre}`);
         res.json({ 
             success: true, 
             message: `Ahora son amigos`,
@@ -185,6 +219,8 @@ app.post('/amistad/aceptar', (req, res) => {
 app.post('/amistad/rechazar', (req, res) => {
     const { usuarioId, solicitanteId } = req.body;
     
+    console.log(`❌ Rechazar solicitud: ${solicitanteId} -> ${usuarioId}`);
+    
     const data = leerUsuarios();
     const usuario = data.usuarios.find(u => u.id === usuarioId);
     
@@ -192,7 +228,9 @@ app.post('/amistad/rechazar', (req, res) => {
         return res.status(404).json({ error: 'Usuario no encontrado' });
     }
     
-    usuario.solicitudes = usuario.solicitudes.filter(id => id !== solicitanteId);
+    if (usuario.solicitudes) {
+        usuario.solicitudes = usuario.solicitudes.filter(id => id !== solicitanteId);
+    }
     
     if (guardarUsuarios(data)) {
         res.json({ success: true, message: 'Solicitud rechazada' });
@@ -202,12 +240,14 @@ app.post('/amistad/rechazar', (req, res) => {
 });
 
 // ============================================
-// MENSAJES OFFLINE
+// ENDPOINTS DE MENSAJES OFFLINE
 // ============================================
 
 // Enviar mensaje (incluso si el otro está offline)
 app.post('/mensaje/enviar', (req, res) => {
     const { emisorId, receptorId, mensaje } = req.body;
+    
+    console.log(`💬 Mensaje offline: ${emisorId} -> ${receptorId}: "${mensaje}"`);
     
     if (!emisorId || !receptorId || !mensaje) {
         return res.status(400).json({ error: 'Faltan datos' });
@@ -237,6 +277,7 @@ app.post('/mensaje/enviar', (req, res) => {
     });
     
     if (guardarUsuarios(data)) {
+        console.log(`✅ Mensaje guardado para ${receptor.nombre} (${receptor.mensajes_pendientes.length} pendientes)`);
         res.json({ 
             success: true, 
             message: 'Mensaje guardado (entregado cuando el usuario se conecte)',
@@ -250,6 +291,8 @@ app.post('/mensaje/enviar', (req, res) => {
 // Obtener mensajes pendientes (cuando un usuario se conecta)
 app.get('/mensaje/pendientes/:id', (req, res) => {
     const id = req.params.id;
+    console.log(`📩 Consultando mensajes pendientes para: ${id}`);
+    
     const data = leerUsuarios();
     const usuario = data.usuarios.find(u => u.id === id);
     
@@ -258,12 +301,14 @@ app.get('/mensaje/pendientes/:id', (req, res) => {
     }
     
     const pendientes = usuario.mensajes_pendientes || [];
+    console.log(`📩 ${pendientes.length} mensajes pendientes para ${usuario.nombre}`);
     res.json({ pendientes });
 });
 
-// Marcar mensajes como leídos (cuando se entregan)
+// Marcar mensajes como leídos
 app.post('/mensaje/leidos', (req, res) => {
     const { usuarioId } = req.body;
+    console.log(`📖 Marcando mensajes como leídos para: ${usuarioId}`);
     
     const data = leerUsuarios();
     const usuario = data.usuarios.find(u => u.id === usuarioId);
@@ -272,9 +317,10 @@ app.post('/mensaje/leidos', (req, res) => {
         return res.status(404).json({ error: 'Usuario no encontrado' });
     }
     
-    // Marcar todos como leídos
+    // Marcar todos como leídos y luego eliminar los ya leídos
     if (usuario.mensajes_pendientes) {
-        usuario.mensajes_pendientes.forEach(m => m.leido = true);
+        // Filtrar solo los no leídos (los que aún no se han entregado)
+        usuario.mensajes_pendientes = usuario.mensajes_pendientes.filter(m => !m.leido);
     }
     
     if (guardarUsuarios(data)) {
@@ -313,4 +359,6 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`💬 POST /mensaje/enviar - Enviar mensaje offline`);
     console.log(`📩 GET  /mensaje/pendientes/:id - Obtener mensajes pendientes`);
     console.log(`📖 POST /mensaje/leidos - Marcar mensajes como leídos`);
+    console.log(`📊 GET  /status    - Estado del servidor`);
+    console.log('\n✅ Servidor listo para amistades y mensajes offline!');
 });
