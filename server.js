@@ -229,12 +229,16 @@ app.post('/amistad/rechazar', (req, res) => {
 });
 
 // ============================================
-// MENSAJES OFFLINE
+// MENSAJES OFFLINE (CORREGIDO)
 // ============================================
 
 app.post('/mensaje/enviar', (req, res) => {
     const { emisorId, receptorId, mensaje } = req.body;
-    console.log(`💬 Mensaje offline: ${emisorId} -> ${receptorId}`);
+    console.log(`💬 Mensaje offline: ${emisorId} -> ${receptorId}: "${mensaje}"`);
+    
+    if (!emisorId || !receptorId || !mensaje) {
+        return res.status(400).json({ error: 'Faltan datos' });
+    }
     
     const data = leerUsuarios();
     const emisor = data.usuarios.find(u => u.id === emisorId);
@@ -244,10 +248,12 @@ app.post('/mensaje/enviar', (req, res) => {
         return res.status(404).json({ error: 'Usuario no encontrado' });
     }
     
+    // Verificar si son amigos
     if (!emisor.amigos || !emisor.amigos.includes(receptorId)) {
         return res.status(403).json({ error: 'No son amigos' });
     }
     
+    // Guardar mensaje en pendientes del receptor
     if (!receptor.mensajes_pendientes) receptor.mensajes_pendientes = [];
     receptor.mensajes_pendientes.push({
         de: emisorId,
@@ -256,6 +262,8 @@ app.post('/mensaje/enviar', (req, res) => {
         timestamp: new Date().toISOString(),
         leido: false
     });
+    
+    console.log(`📩 Mensaje guardado para ${receptor.nombre}. Total pendientes: ${receptor.mensajes_pendientes.length}`);
     
     if (guardarUsuarios(data)) {
         res.json({ 
@@ -270,24 +278,36 @@ app.post('/mensaje/enviar', (req, res) => {
 
 app.get('/mensaje/pendientes/:id', (req, res) => {
     const id = req.params.id;
+    console.log(`📩 Consultando mensajes pendientes para: ${id}`);
+    
     const data = leerUsuarios();
     const usuario = data.usuarios.find(u => u.id === id);
     if (!usuario) {
         return res.status(404).json({ error: 'Usuario no encontrado' });
     }
-    res.json({ pendientes: usuario.mensajes_pendientes || [] });
+    
+    const pendientes = usuario.mensajes_pendientes || [];
+    console.log(`📩 ${pendientes.length} mensajes pendientes para ${usuario.nombre}`);
+    res.json({ pendientes });
 });
 
 app.post('/mensaje/leidos', (req, res) => {
     const { usuarioId } = req.body;
+    console.log(`📖 Marcando mensajes como leídos para: ${usuarioId}`);
+    
     const data = leerUsuarios();
     const usuario = data.usuarios.find(u => u.id === usuarioId);
     if (!usuario) {
         return res.status(404).json({ error: 'Usuario no encontrado' });
     }
+    
+    // Eliminar mensajes ya entregados (leídos)
     if (usuario.mensajes_pendientes) {
-        usuario.mensajes_pendientes = usuario.mensajes_pendientes.filter(m => !m.leido);
+        const antes = usuario.mensajes_pendientes.length;
+        usuario.mensajes_pendientes = usuario.mensajes_pendientes.filter(m => m.leido === false);
+        console.log(`📖 Eliminados ${antes - usuario.mensajes_pendientes.length} mensajes leídos`);
     }
+    
     if (guardarUsuarios(data)) {
         res.json({ success: true });
     } else {
