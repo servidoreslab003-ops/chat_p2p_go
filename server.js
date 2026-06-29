@@ -6,9 +6,15 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// Middleware
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json({ limit: '10mb' }));
 
+// Ruta del archivo usuarios.json
 const USUARIOS_FILE = path.join(__dirname, 'usuarios.json');
 
 // ============================================
@@ -19,17 +25,25 @@ function leerUsuarios() {
     try {
         if (fs.existsSync(USUARIOS_FILE)) {
             const data = fs.readFileSync(USUARIOS_FILE, 'utf8');
-            return JSON.parse(data);
+            const parsed = JSON.parse(data);
+            console.log(`📖 Leídos ${parsed.usuarios ? parsed.usuarios.length : 0} usuarios`);
+            return parsed;
+        } else {
+            console.log('📄 Archivo usuarios.json no existe, creando uno nuevo');
+            const empty = { usuarios: [] };
+            fs.writeFileSync(USUARIOS_FILE, JSON.stringify(empty, null, 2));
+            return empty;
         }
     } catch (error) {
         console.error('❌ Error al leer:', error.message);
+        return { usuarios: [] };
     }
-    return { usuarios: [] };
 }
 
 function guardarUsuarios(data) {
     try {
         fs.writeFileSync(USUARIOS_FILE, JSON.stringify(data, null, 2));
+        console.log(`✅ Guardados ${data.usuarios ? data.usuarios.length : 0} usuarios`);
         return true;
     } catch (error) {
         console.error('❌ Error al guardar:', error.message);
@@ -38,17 +52,19 @@ function guardarUsuarios(data) {
 }
 
 // ============================================
-// ENDPOINTS BÁSICOS
+// ENDPOINTS
 // ============================================
 
 // GET: Obtener todos los usuarios
 app.get('/usuarios', (req, res) => {
+    console.log('📥 GET /usuarios');
     const data = leerUsuarios();
     res.json(data);
 });
 
 // GET: Obtener un usuario por ID
 app.get('/usuarios/:id', (req, res) => {
+    console.log(`📥 GET /usuarios/${req.params.id}`);
     const data = leerUsuarios();
     const usuario = data.usuarios.find(u => u.id === req.params.id);
     if (usuario) {
@@ -62,22 +78,32 @@ app.get('/usuarios/:id', (req, res) => {
 app.post('/usuarios', (req, res) => {
     const { id, nombre, password, peer_id } = req.body;
     
-    console.log('📝 POST /usuarios:', { id, nombre, password: password ? '****' : 'sin', peer_id });
+    console.log('📝 POST /usuarios recibido:');
+    console.log('  - id:', id);
+    console.log('  - nombre:', nombre);
+    console.log('  - password:', password ? '****' : 'sin password');
+    console.log('  - peer_id:', peer_id);
+    console.log('  - body completo:', req.body);
     
     if (!id || !nombre) {
-        return res.status(400).json({ error: 'Faltan id o nombre' });
+        console.log('❌ Error: Faltan id o nombre');
+        return res.status(400).json({ error: 'Faltan id o nombre', received: req.body });
     }
     
     const data = leerUsuarios();
+    
+    // Buscar si el usuario ya existe
     let usuario = data.usuarios.find(u => u.id === id);
     
     if (usuario) {
+        // Actualizar usuario existente
         usuario.nombre = nombre;
         if (password) usuario.password = password;
         usuario.peer_id = peer_id || null;
         usuario.ultimo_activo = new Date().toISOString();
-        console.log(`✏️ Usuario actualizado: ${nombre}`);
+        console.log(`✏️ Usuario actualizado: ${nombre} (ID: ${id})`);
     } else {
+        // Crear nuevo usuario
         usuario = {
             id: id,
             nombre: nombre,
@@ -89,12 +115,14 @@ app.post('/usuarios', (req, res) => {
             mensajes_pendientes: []
         };
         data.usuarios.push(usuario);
-        console.log(`✅ Usuario creado: ${nombre}`);
+        console.log(`✅ Usuario creado: ${nombre} (ID: ${id})`);
     }
     
     if (guardarUsuarios(data)) {
+        console.log(`📤 Respondiendo con éxito`);
         res.json({ success: true, usuario });
     } else {
+        console.log('❌ Error al guardar');
         res.status(500).json({ error: 'Error al guardar' });
     }
 });
@@ -108,6 +136,7 @@ app.put('/usuarios/:id', (req, res) => {
     const usuario = data.usuarios.find(u => u.id === req.params.id);
     
     if (!usuario) {
+        console.log(`❌ Usuario ${req.params.id} no encontrado`);
         return res.status(404).json({ error: 'Usuario no encontrado' });
     }
     
@@ -122,7 +151,7 @@ app.put('/usuarios/:id', (req, res) => {
 });
 
 // ============================================
-// ENDPOINTS DE AMISTAD
+// AMISTADES
 // ============================================
 
 // Enviar solicitud de amistad
@@ -240,10 +269,10 @@ app.post('/amistad/rechazar', (req, res) => {
 });
 
 // ============================================
-// ENDPOINTS DE MENSAJES OFFLINE
+// MENSAJES OFFLINE
 // ============================================
 
-// Enviar mensaje (incluso si el otro está offline)
+// Enviar mensaje offline
 app.post('/mensaje/enviar', (req, res) => {
     const { emisorId, receptorId, mensaje } = req.body;
     
@@ -280,7 +309,7 @@ app.post('/mensaje/enviar', (req, res) => {
         console.log(`✅ Mensaje guardado para ${receptor.nombre} (${receptor.mensajes_pendientes.length} pendientes)`);
         res.json({ 
             success: true, 
-            message: 'Mensaje guardado (entregado cuando el usuario se conecte)',
+            message: 'Mensaje guardado',
             pendientes: receptor.mensajes_pendientes.length
         });
     } else {
@@ -288,7 +317,7 @@ app.post('/mensaje/enviar', (req, res) => {
     }
 });
 
-// Obtener mensajes pendientes (cuando un usuario se conecta)
+// Obtener mensajes pendientes
 app.get('/mensaje/pendientes/:id', (req, res) => {
     const id = req.params.id;
     console.log(`📩 Consultando mensajes pendientes para: ${id}`);
@@ -317,9 +346,8 @@ app.post('/mensaje/leidos', (req, res) => {
         return res.status(404).json({ error: 'Usuario no encontrado' });
     }
     
-    // Marcar todos como leídos y luego eliminar los ya leídos
+    // Marcar todos como leídos
     if (usuario.mensajes_pendientes) {
-        // Filtrar solo los no leídos (los que aún no se han entregado)
         usuario.mensajes_pendientes = usuario.mensajes_pendientes.filter(m => !m.leido);
     }
     
@@ -360,5 +388,6 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`📩 GET  /mensaje/pendientes/:id - Obtener mensajes pendientes`);
     console.log(`📖 POST /mensaje/leidos - Marcar mensajes como leídos`);
     console.log(`📊 GET  /status    - Estado del servidor`);
-    console.log('\n✅ Servidor listo para amistades y mensajes offline!');
+    console.log('\n✅ Servidor listo!');
+    console.log(`📁 Archivo usuarios.json: ${USUARIOS_FILE}`);
 });
