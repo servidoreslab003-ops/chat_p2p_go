@@ -49,9 +49,11 @@ app.get('/usuarios', (req, res) => {
     res.json(data);
 });
 
-// GUARDAR o ACTUALIZAR usuario (POST)
+// GUARDAR o ACTUALIZAR usuario (POST) - CON CONTRASEÑA
 app.post('/usuarios', (req, res) => {
-    const { id, nombre, peer_id } = req.body;
+    console.log('📥 POST recibido:', req.body); // <--- LOG PARA DEBUG
+    
+    const { id, nombre, password, peer_id } = req.body;
     
     if (!id || !nombre) {
         return res.status(400).json({ error: 'Faltan id o nombre' });
@@ -62,17 +64,23 @@ app.post('/usuarios', (req, res) => {
     let usuario = data.usuarios.find(u => u.id === id);
     
     if (usuario) {
+        // Actualizar usuario existente
         usuario.nombre = nombre;
+        if (password) usuario.password = password; // Solo si se envía
         usuario.peer_id = peer_id || null;
         usuario.ultimo_activo = new Date().toISOString();
+        console.log(`✏️ Usuario actualizado: ${nombre}`);
     } else {
+        // Crear nuevo usuario
         usuario = {
             id: id,
             nombre: nombre,
+            password: password || '',
             peer_id: peer_id || null,
             ultimo_activo: new Date().toISOString()
         };
         data.usuarios.push(usuario);
+        console.log(`✅ Usuario creado: ${nombre}`);
     }
     
     if (guardarUsuarios(data)) {
@@ -94,6 +102,7 @@ app.put('/usuarios/:id', (req, res) => {
     
     usuario.peer_id = peer_id || null;
     usuario.ultimo_activo = new Date().toISOString();
+    console.log(`🔄 Peer ID actualizado: ${usuario.nombre} -> ${peer_id}`);
     
     if (guardarUsuarios(data)) {
         res.json({ success: true, usuario });
@@ -128,7 +137,12 @@ app.get('/status', (req, res) => {
         status: 'online',
         timestamp: new Date().toISOString(),
         total_usuarios: data.usuarios.length,
-        usuarios_en_linea: enLinea.length
+        usuarios_en_linea: enLinea.length,
+        usuarios: data.usuarios.map(u => ({ 
+            nombre: u.nombre, 
+            peer_id: u.peer_id,
+            tiene_password: !!u.password 
+        }))
     });
 });
 
@@ -139,7 +153,7 @@ app.get('/status', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor de usuarios.json corriendo en puerto ${PORT}`);
     console.log(`📄 GET  /usuarios  - Obtener todos los usuarios`);
-    console.log(`📝 POST /usuarios  - Guardar/Actualizar usuario`);
+    console.log(`📝 POST /usuarios  - Guardar/Actualizar usuario (con password)`);
     console.log(`✏️  PUT  /usuarios/:id - Actualizar peer_id`);
     console.log(`🗑️  DELETE /usuarios/:id - Eliminar usuario`);
     console.log(`📊 GET  /status    - Estado del servidor`);
