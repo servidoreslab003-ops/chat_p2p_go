@@ -42,8 +42,18 @@ function leerUsuarios() {
 
 function guardarUsuarios(data) {
     try {
+        // Verificar que data tenga la estructura correcta
+        if (!data || typeof data !== 'object') {
+            console.error('❌ Data inválida:', data);
+            return false;
+        }
+        if (!data.usuarios || !Array.isArray(data.usuarios)) {
+            console.error('❌ Data no tiene array usuarios:', data);
+            return false;
+        }
+        
         fs.writeFileSync(USUARIOS_FILE, JSON.stringify(data, null, 2));
-        console.log(`✅ Guardados ${data.usuarios ? data.usuarios.length : 0} usuarios`);
+        console.log(`✅ Guardados ${data.usuarios.length} usuarios en el archivo`);
         return true;
     } catch (error) {
         console.error('❌ Error al guardar:', error.message);
@@ -89,32 +99,41 @@ app.post('/usuarios', (req, res) => {
         return res.status(400).json({ error: 'Faltan id o nombre' });
     }
     
-    // LEER TODOS LOS USUARIOS
-    const data = leerUsuarios();
+    // LEER TODOS LOS USUARIOS EXISTENTES
+    let data = leerUsuarios();
+    
+    // Asegurar que data tenga la estructura correcta
+    if (!data.usuarios || !Array.isArray(data.usuarios)) {
+        data = { usuarios: [] };
+    }
     
     // Buscar si el usuario ya existe por ID
-    let usuarioExistente = data.usuarios.find(u => u.id === id);
+    const indexExistente = data.usuarios.findIndex(u => u.id === id);
     
     // Buscar si el usuario ya existe por nombre (para evitar duplicados)
-    let usuarioPorNombre = data.usuarios.find(u => u.nombre === nombre && u.id !== id);
+    const existePorNombre = data.usuarios.find(u => u.nombre === nombre && u.id !== id);
     
-    if (usuarioPorNombre) {
+    if (existePorNombre) {
         console.log(`⚠️ Ya existe un usuario con el nombre "${nombre}"`);
         return res.status(400).json({ 
             error: `El nombre "${nombre}" ya está en uso`,
-            usuario_existente: usuarioPorNombre
+            usuario_existente: existePorNombre
         });
     }
     
     let usuario;
     
-    if (usuarioExistente) {
+    if (indexExistente !== -1) {
         // Actualizar usuario existente
-        usuario = usuarioExistente;
+        usuario = data.usuarios[indexExistente];
         usuario.nombre = nombre;
         if (password) usuario.password = password;
         usuario.peer_id = peer_id || null;
         usuario.ultimo_activo = new Date().toISOString();
+        // Asegurar que tenga los campos de amistad
+        if (!usuario.amigos) usuario.amigos = [];
+        if (!usuario.solicitudes) usuario.solicitudes = [];
+        if (!usuario.mensajes_pendientes) usuario.mensajes_pendientes = [];
         console.log(`✏️ Usuario actualizado: ${nombre} (ID: ${id})`);
     } else {
         // Crear nuevo usuario
@@ -132,8 +151,10 @@ app.post('/usuarios', (req, res) => {
         console.log(`✅ Nuevo usuario creado: ${nombre} (ID: ${id})`);
     }
     
-    // GUARDAR TODO EL ARRAY DE USUARIOS
-    if (guardarUsuarios(data)) {
+    // GUARDAR TODO EL ARRAY COMPLETO DE USUARIOS
+    const success = guardarUsuarios(data);
+    
+    if (success) {
         console.log(`📤 Respondiendo con éxito. Total usuarios: ${data.usuarios.length}`);
         res.json({ success: true, usuario });
     } else {
@@ -405,6 +426,6 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`📩 GET  /mensaje/pendientes/:id - Obtener mensajes pendientes`);
     console.log(`📖 POST /mensaje/leidos - Marcar mensajes como leídos`);
     console.log(`📊 GET  /status    - Estado del servidor`);
-    console.log('\n✅ Servidor listo para amistades y mensajes offline!');
+    console.log('\n✅ Servidor listo!');
     console.log(`📁 Archivo usuarios.json: ${USUARIOS_FILE}`);
 });
